@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using TMPro;
+using UnityEditor;
 using UnityEngine;
 
 namespace SimpleDecal
@@ -103,10 +104,13 @@ namespace SimpleDecal
                 }
             }
         }
-#endif
+
         
         void OnDrawGizmos()
         {
+            if (Selection.activeGameObject != gameObject)
+                return;
+            
             foreach( var e in UnitCube.Edges)
                 GizmoLine(e);
             
@@ -146,6 +150,7 @@ namespace SimpleDecal
                 b.LocalToWorld(transform)
             );
         }
+#endif
 
         public static float Tolerant(float v)
         {
