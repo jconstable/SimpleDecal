@@ -11,13 +11,15 @@ namespace SimpleDecal
         public static readonly float ErrorTolerance = 0.005f;
         
         [SerializeField]
-        public float m_displacement = 0.001f;
+        public float m_displacement = 0.0001f;
         [SerializeField]
         public bool m_bakeOnStart;
         [SerializeField]
         public MeshFilter m_meshFilter;
         [SerializeField]
         public Material m_decalMaterial;
+        [SerializeField]
+        public LayerMask m_layerMask = int.MaxValue; // Everything
 
         Mesh m_mesh;
         List<Vector3> m_points = new List<Vector3>();
@@ -35,6 +37,7 @@ namespace SimpleDecal
         Vector3 _lastScale;
         float _lastDisplacement;
         Material _lastMaterial;
+        int _lastLayerMask;
 #endif
 
         public void SetMaterial(Material m)
@@ -64,7 +67,8 @@ namespace SimpleDecal
                     !_lastPosition.Approximately(transform.position) ||
                     !_lastScale.Approximately(transform.lossyScale) ||
                     !Mathf.Approximately(_lastDisplacement, m_displacement) ||
-                    _lastMaterial != m_decalMaterial)
+                    _lastMaterial != m_decalMaterial ||
+                    _lastLayerMask != m_layerMask)
                 {
                     Bake();
                     _lastRotation = transform.rotation;
@@ -72,6 +76,7 @@ namespace SimpleDecal
                     _lastScale = transform.lossyScale;
                     _lastDisplacement = m_displacement;
                     _lastMaterial = m_decalMaterial;
+                    _lastLayerMask = m_layerMask;
                 }
             }
         }
@@ -201,15 +206,23 @@ namespace SimpleDecal
         {
             foreach (var meshFilter in FindObjectsOfType<MeshFilter>())
             {
+                // Filter out object by layer mask
+                int mask = 1 << meshFilter.gameObject.layer;
+                if ((mask & m_layerMask) != mask)
+                    continue;
+                
+                // Filter out objects that are themselves decal projectors
                 if (meshFilter.GetComponent<DecalProjector>() != null)
                     continue;
 
+                // Filter out objects by render bounds
                 Renderer r = meshFilter.GetComponent<Renderer>();
                 if (!r.bounds.Intersects(m_bounds))
                 {
                     continue;
                 }
 
+                // Filter out objects with no mesh
                 Mesh m = meshFilter.sharedMesh;
                 if (m == null)
                     continue;
