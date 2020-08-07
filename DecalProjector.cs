@@ -9,6 +9,7 @@ namespace SimpleDecal
     public class DecalProjector : MonoBehaviour
     {
         public static readonly float ErrorTolerance = 0.005f;
+        public static readonly int MaxDecalTriangles = 100;
         
         [SerializeField]
         public float m_displacement = 0.0001f;
@@ -24,11 +25,15 @@ namespace SimpleDecal
         Mesh m_mesh;
         List<Vector3> m_points = new List<Vector3>();
         Bounds m_bounds;
-        
-        List<Vector3> m_scratchVertices = new List<Vector3>();
-        List<int> m_scratchIndices = new List<int>();
-        List<Vector3> m_scratchNormals = new List<Vector3>();
-        List<Vector2> m_scratchUVs = new List<Vector2>();
+
+        Vector3[] m_scratchVertices;
+        int m_scratchVerticesCount;
+        int[] m_scratchIndices;
+        int m_scratchIndicesCount;
+        Vector3[] m_scratchNormals;
+        int m_scratchNormalsCount;
+        Vector2[] m_scratchUVs;
+        int m_scratchUVCount;
         List<Triangle> m_scratchTris = new List<Triangle>();
 
 #if UNITY_EDITOR
@@ -38,22 +43,40 @@ namespace SimpleDecal
         float _lastDisplacement;
         Material _lastMaterial;
         int _lastLayerMask;
+        int _lastMaxTriangles;
 #endif
 
         public void SetMaterial(Material m)
         {
             m_decalMaterial = m;
         }
-        
-        
 
         // Start is called before the first frame update
         void Start()
         {
+            GenerateScratchBuffers();
+                
             m_meshFilter = GetComponent<MeshFilter>();
             if (m_bakeOnStart)
             {
                 Bake();
+            }
+        }
+
+        void GenerateScratchBuffers()
+        {
+            if (_lastMaxTriangles != MaxDecalTriangles)
+            {
+                m_scratchVertices = new Vector3[MaxDecalTriangles * 3];
+                m_scratchNormals = new Vector3[MaxDecalTriangles * 3];
+                m_scratchIndices = new int[MaxDecalTriangles * 3];
+                m_scratchUVs = new Vector2[MaxDecalTriangles * 3];
+                for (int i = 0; i < MaxDecalTriangles * 3; i++)
+                {
+                    m_scratchIndices[i] = i;
+                }
+
+                _lastMaxTriangles = MaxDecalTriangles;
             }
         }
 
@@ -144,6 +167,8 @@ namespace SimpleDecal
 
         public void Bake()
         {
+            GenerateScratchBuffers();
+            
             m_bounds = new Bounds(transform.position, transform.lossyScale);
             GenerateMesh();
 
@@ -153,25 +178,25 @@ namespace SimpleDecal
             }
         }
 
-        void CopyInto(Triangle t, List<Vector3> vertices, List<int> indices, List<Vector3> normals,
-            List<Vector2> uvs)
+        void CopyInto(Triangle t)
         {
-            float halfDim = transform.lossyScale.x * 0.5f;
-
-            indices.Add(indices.Count);
-            vertices.Add(t.Vertex0);
-            normals.Add(Vector3.up);
-            uvs.Add(new Vector2(t.Vertex0.x + 0.5f, t.Vertex0.z + 0.5f));
+            m_scratchIndicesCount++; // Already set
+            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex0;
+            m_scratchNormals[m_scratchNormalsCount++] = t.normal;
+            m_scratchUVs[m_scratchUVCount].x = t.Vertex0.x + 0.5f;
+            m_scratchUVs[m_scratchUVCount++].y = t.Vertex0.z + 0.5f;
             
-            indices.Add(indices.Count);
-            vertices.Add(t.Vertex1);
-            normals.Add(Vector3.up);
-            uvs.Add(new Vector2(t.Vertex1.x + 0.5f, t.Vertex1.z + 0.5f));
+            m_scratchIndicesCount++; // Already set
+            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex1;
+            m_scratchNormals[m_scratchNormalsCount++] = t.normal;
+            m_scratchUVs[m_scratchUVCount].x = t.Vertex1.x + 0.5f;
+            m_scratchUVs[m_scratchUVCount++].y = t.Vertex1.z + 0.5f;
             
-            indices.Add(indices.Count);
-            vertices.Add(t.Vertex2);
-            normals.Add(Vector3.up);
-            uvs.Add(new Vector2(t.Vertex2.x + 0.5f, t.Vertex2.z + 0.5f));
+            m_scratchIndicesCount++; // Already set
+            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex2;
+            m_scratchNormals[m_scratchNormalsCount++] = t.normal;
+            m_scratchUVs[m_scratchUVCount].x = t.Vertex2.x + 0.5f;
+            m_scratchUVs[m_scratchUVCount++].y = t.Vertex2.z + 0.5f;
         }
         
         void GenerateMesh()
@@ -182,18 +207,18 @@ namespace SimpleDecal
 #else
             Destroy(_mesh);
 #endif
-            m_scratchVertices.Clear();
-            m_scratchIndices.Clear();
-            m_scratchNormals.Clear(); 
-            m_scratchUVs.Clear();
+            m_scratchVerticesCount = 0;
+            m_scratchIndicesCount = 0;
+            m_scratchNormalsCount = 0;
+            m_scratchUVCount = 0;
 
-            GatherTringles(m_scratchVertices, m_scratchIndices, m_scratchNormals, m_scratchUVs);
+            GatherTringles();
 
             m_mesh = new Mesh();
-            m_mesh.vertices = m_scratchVertices.ToArray();
-            m_mesh.SetIndices(m_scratchIndices.ToArray(), MeshTopology.Triangles, 0);
-            m_mesh.normals = m_scratchNormals.ToArray();
-            m_mesh.uv = m_scratchUVs.ToArray();
+            m_mesh.SetVertices(m_scratchVertices, 0, m_scratchVerticesCount);
+            m_mesh.SetIndices(m_scratchIndices, 0, m_scratchIndicesCount, MeshTopology.Triangles, 0);
+            m_mesh.SetNormals(m_scratchNormals, 0, m_scratchNormalsCount);
+            m_mesh.SetUVs(0, m_scratchUVs, 0, m_scratchUVCount);
             m_mesh.UploadMeshData(true);
             MeshRenderer rend = GetComponent<MeshRenderer>();
             if (rend != null)
@@ -202,8 +227,9 @@ namespace SimpleDecal
             }
         }
 
-        void GatherTringles(List<Vector3> vertices, List<int> indices, List<Vector3> normals, List<Vector2> uvs)
+        int GatherTringles()
         {
+            int num = 0;
             foreach (var meshFilter in FindObjectsOfType<MeshFilter>())
             {
                 // Filter out object by layer mask
@@ -244,11 +270,19 @@ namespace SimpleDecal
                         CollectClippedTriangles(tInProjectorLocal);
                         foreach(var newTriangle in m_scratchTris)
                         {
-                            CopyInto(newTriangle.Offset(m_displacement), vertices, indices, normals, uvs);
+                            if (num >= MaxDecalTriangles)
+                            {
+                                Debug.LogError($"Decal triangles exceeds max trianges {MaxDecalTriangles}.");
+                                return num;
+                            }
+                            CopyInto(newTriangle.Offset(m_displacement));
+                            num++;
                         }
                     }
                 }
             }
+
+            return num;
         }
 
         
