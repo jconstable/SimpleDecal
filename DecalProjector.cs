@@ -325,7 +325,7 @@ namespace SimpleDecal
             m_points.Sort((a,b) => SignedAngle(orientation, middle - a, t.normal).CompareTo(SignedAngle(orientation, middle - b, t.normal)));
             
             // Create triangles from the points
-            for (int i = 0; i <= m_points.Count - 1; i++)
+            for (int i = 0; i < m_points.Count; i++)
             {
                 m_scratchTris.Add(new Triangle(
                     middle, m_points[i], m_points[(i+1) % m_points.Count]
