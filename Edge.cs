@@ -1,33 +1,31 @@
-﻿using UnityEngine;
+﻿using Unity.Mathematics;
 
 namespace SimpleDecal
 {
     public struct Edge
     {
-        public Vector3 Vertex0 { get; }
-        public Vector3 Vertex1 { get; }
-        public Vector3 mid;
+        public float4 Vertex0 { get; }
+        public float4 Vertex1 { get; }
         public float length;
 
-        public Edge(Vector3 a, Vector3 b)
+        public Edge(float4 a, float4 b)
         {
             Vertex0 = a;
             Vertex1 = b;
 
-            Vector3 dir = a - b;
-            length = dir.magnitude;
-            mid = a + (dir.normalized * (length * 0.5f));
+            float4 dir = a - b;
+            length = math.length(dir);
         }
 
-        public Vector3 EdgeVector()
+        public float4 EdgeVector()
         {
             return Vertex1 - Vertex0;
         }
 
-        public bool Contains(Vector3 point)
+        public bool Contains(float4 point)
         {
-            float testLength = (Vertex0 - point).magnitude + (Vertex1 - point).magnitude;
-            return Mathf.Abs(length - testLength) < DecalProjector.ErrorTolerance;
+            float testLength = math.length(Vertex0 - point) + math.length(Vertex1 - point);
+            return math.abs(length - testLength) < DecalProjector.ErrorTolerance;
         }
     }
 }

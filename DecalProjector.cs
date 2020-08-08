@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using TMPro;
+using Bolt;
+using Unity.Collections;
+using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 
@@ -24,18 +27,24 @@ namespace SimpleDecal
         public LayerMask m_layerMask = int.MaxValue; // Everything
 
         Mesh m_mesh;
-        List<Vector3> m_points = new List<Vector3>();
         Bounds m_bounds;
+        TRS m_TRS = new TRS();
+        MeshRenderer m_renderer;
 
-        Vector3[] m_scratchVertices;
-        int m_scratchVerticesCount;
-        int[] m_scratchIndices;
-        int m_scratchIndicesCount;
-        Vector3[] m_scratchNormals;
-        int m_scratchNormalsCount;
-        Vector2[] m_scratchUVs;
-        int m_scratchUVCount;
-        List<Triangle> m_scratchTris = new List<Triangle>();
+        static Vector3[] m_scratchVertices;
+        static int m_scratchVerticesCount;
+        static int[] m_scratchIndices;
+        static int m_scratchIndicesCount;
+        static Vector3[] m_scratchNormals;
+        static int m_scratchNormalsCount;
+        static Vector2[] m_scratchUVs;
+        static int m_scratchUVCount;
+
+        JobHandle m_clippingJobHandle;
+        bool m_outstandingClippingJob;
+        ClippingJob m_clippingJob;
+
+        bool m_wantsToScheduleNewJob;
 
 #if UNITY_EDITOR
         Quaternion _lastRotation;
@@ -57,6 +66,7 @@ namespace SimpleDecal
         {
             GenerateScratchBuffers();
                 
+            m_renderer = GetComponent<MeshRenderer>();
             m_meshFilter = GetComponent<MeshFilter>();
             if (m_bakeOnStart)
             {
@@ -66,7 +76,12 @@ namespace SimpleDecal
 
         void GenerateScratchBuffers()
         {
-            if (_lastMaxTriangles != MaxDecalTriangles)
+            if (_lastMaxTriangles != MaxDecalTriangles ||
+                m_scratchVertices == null ||
+                m_scratchNormals == null ||
+                m_scratchIndices == null ||
+                m_scratchUVs == null
+                )
             {
                 m_scratchVertices = new Vector3[MaxDecalTriangles * 3];
                 m_scratchNormals = new Vector3[MaxDecalTriangles * 3];
@@ -79,6 +94,15 @@ namespace SimpleDecal
 
                 _lastMaxTriangles = MaxDecalTriangles;
             }
+        }
+
+        void OnDestroy()
+        {
+        }
+
+        void UpdateTRS()
+        {
+            m_TRS.Update(transform.worldToLocalMatrix, transform.localToWorldMatrix, transform.position.ToFloat4());
         }
 
 #if UNITY_EDITOR
@@ -94,7 +118,7 @@ namespace SimpleDecal
                     _lastMaterial != m_decalMaterial ||
                     _lastLayerMask != m_layerMask)
                 {
-                    Bake();
+                    m_wantsToScheduleNewJob = true;
                     _lastRotation = transform.rotation;
                     _lastPosition = transform.position;
                     _lastScale = transform.lossyScale;
@@ -103,11 +127,19 @@ namespace SimpleDecal
                     _lastLayerMask = m_layerMask;
                 }
             }
+
+            if (m_wantsToScheduleNewJob && !m_outstandingClippingJob)
+            {
+                Bake();
+                m_wantsToScheduleNewJob = false;
+            }
         }
 
         
         void OnDrawGizmos()
         {
+            UpdateTRS();
+
             if (Selection.activeGameObject != gameObject)
                 return;
             
@@ -120,10 +152,10 @@ namespace SimpleDecal
             GizmoLine(UnitCube.e2);
             GizmoLine(UnitCube.e3);
             
-            Vector3 extrapolate0 = GizmoLineExtrapolate(UnitCube.e0.Vertex0);
-            Vector3 extrapolate1 = GizmoLineExtrapolate(UnitCube.e1.Vertex0);
-            Vector3 extrapolate2 = GizmoLineExtrapolate(UnitCube.e2.Vertex0);
-            Vector3 extrapolate3 = GizmoLineExtrapolate(UnitCube.e3.Vertex0);
+            float4 extrapolate0 = GizmoLineExtrapolate(UnitCube.e0.Vertex0);
+            float4 extrapolate1 = GizmoLineExtrapolate(UnitCube.e1.Vertex0);
+            float4 extrapolate2 = GizmoLineExtrapolate(UnitCube.e2.Vertex0);
+            float4 extrapolate3 = GizmoLineExtrapolate(UnitCube.e3.Vertex0);
             
             GizmoLine(extrapolate0, extrapolate1);
             GizmoLine(extrapolate1, extrapolate2);
@@ -131,9 +163,9 @@ namespace SimpleDecal
             GizmoLine(extrapolate3, extrapolate0);
         }
 
-        Vector3 GizmoLineExtrapolate(Vector3 v)
+        float4 GizmoLineExtrapolate(float4 v)
         {
-            Vector3 extrapolatedV = v + (v.normalized * 0.2f);
+            float4 extrapolatedV = v + (math.normalize(v) * 0.2f);
             GizmoLine(v, extrapolatedV);
             return extrapolatedV;
         }
@@ -143,98 +175,66 @@ namespace SimpleDecal
             GizmoLine(e.Vertex0, e.Vertex1);
         }
 
-        void GizmoLine(Vector3 a, Vector3 b)
+        void GizmoLine(float4 a, float4 b)
         {
             Gizmos.DrawLine(
-                a.LocalToWorld(transform),
-                b.LocalToWorld(transform)
+                m_TRS.LocalToWorld(a).xyz, m_TRS.LocalToWorld(b).xyz
             );
         }
 #endif
 
-        public static float Tolerant(float v)
-        {
-            return v > 0f ? v + ErrorTolerance : v - ErrorTolerance;
-        }
-
-        bool Contains(Vector3 v)
-        {
-            if ((v.x >= Tolerant(-0.5f) && v.x <= Tolerant(0.5f)) &&
-                (v.y >= Tolerant(-0.5f) && v.y <= Tolerant(0.5f)) &&
-                (v.z >= Tolerant(-0.5f) && v.z <= Tolerant(0.5f))
-                )
-            {
-                return true;
-            }
-
-            return false;
-        }
-
         public void Bake()
         {
-            GenerateScratchBuffers();
-            
             m_bounds = new Bounds(transform.position, transform.lossyScale);
-            GenerateMesh();
-
-            if (m_meshFilter != null)
-            {
-                m_meshFilter.sharedMesh = m_mesh;
-            }
+            
+            UpdateTRS();
+            GenerateScratchBuffers();
+            CreateMeshJob();
         }
 
-        void CopyInto(Triangle t)
+        void AppendTriangleToScratchBuffers(Triangle t)
         {
             m_scratchIndicesCount++; // Already set
-            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex0;
-            m_scratchNormals[m_scratchNormalsCount++] = t.normal;
+            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex0.xyz;
+            m_scratchNormals[m_scratchNormalsCount++] = t.Normal.xyz;
             m_scratchUVs[m_scratchUVCount].x = t.Vertex0.x + 0.5f;
             m_scratchUVs[m_scratchUVCount++].y = t.Vertex0.z + 0.5f;
             
             m_scratchIndicesCount++; // Already set
-            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex1;
-            m_scratchNormals[m_scratchNormalsCount++] = t.normal;
+            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex1.xyz;
+            m_scratchNormals[m_scratchNormalsCount++] = t.Normal.xyz;
             m_scratchUVs[m_scratchUVCount].x = t.Vertex1.x + 0.5f;
             m_scratchUVs[m_scratchUVCount++].y = t.Vertex1.z + 0.5f;
             
             m_scratchIndicesCount++; // Already set
-            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex2;
-            m_scratchNormals[m_scratchNormalsCount++] = t.normal;
+            m_scratchVertices[m_scratchVerticesCount++] = t.Vertex2.xyz;
+            m_scratchNormals[m_scratchNormalsCount++] = t.Normal.xyz;
             m_scratchUVs[m_scratchUVCount].x = t.Vertex2.x + 0.5f;
             m_scratchUVs[m_scratchUVCount++].y = t.Vertex2.z + 0.5f;
         }
         
-        void GenerateMesh()
+        void CreateMeshJob()
         {
-            if (m_mesh != null)
-#if UNITY_EDITOR
-                DestroyImmediate(m_mesh);
-#else
-            Destroy(_mesh);
-#endif
-            m_scratchVerticesCount = 0;
-            m_scratchIndicesCount = 0;
-            m_scratchNormalsCount = 0;
-            m_scratchUVCount = 0;
+            NativeArray<Triangle> sourceTriangleArray = new NativeArray<Triangle>(MaxDecalTriangles, Allocator.TempJob);
+            int numSourceTriangles = GatherTriangles(sourceTriangleArray);
+            
+            NativeArray<int> numGeneratedTriangles = new NativeArray<int>(1, Allocator.TempJob);
+            NativeArray<Triangle> generatedTriangleArray = new NativeArray<Triangle>(MaxDecalTriangles, Allocator.TempJob);
+            
+            m_clippingJob = new ClippingJob(numSourceTriangles, sourceTriangleArray, generatedTriangleArray, numGeneratedTriangles);
 
-            GatherTringles();
-
-            m_mesh = new Mesh();
-            m_mesh.SetVertices(m_scratchVertices, 0, m_scratchVerticesCount);
-            m_mesh.SetIndices(m_scratchIndices, 0, m_scratchIndicesCount, MeshTopology.Triangles, 0);
-            m_mesh.SetNormals(m_scratchNormals, 0, m_scratchNormalsCount);
-            m_mesh.SetUVs(0, m_scratchUVs, 0, m_scratchUVCount);
-            m_mesh.UploadMeshData(true);
-            MeshRenderer rend = GetComponent<MeshRenderer>();
-            if (rend != null)
-            {
-                rend.sharedMaterial = m_decalMaterial;
-            }
+            //m_clippingJobHandle = m_clippingJob.Schedule();
+            //m_outstandingClippingJob = true;
+            
+            m_clippingJob.Execute();
+            HandleJob();
         }
 
-        int GatherTringles()
+        int GatherTriangles(NativeArray<Triangle> sourceTriangleArray)
         {
-            int num = 0;
+            TRS meshTRS = new TRS();
+            int sourceTriangles = 0;
+
             foreach (var meshFilter in FindObjectsOfType<MeshFilter>())
             {
                 // Filter out object by layer mask
@@ -257,130 +257,105 @@ namespace SimpleDecal
                 Mesh m = meshFilter.sharedMesh;
                 if (m == null)
                     continue;
+                
+                Transform meshTransform = meshFilter.transform;
+                meshTRS.Update(meshTransform.worldToLocalMatrix, meshTransform.localToWorldMatrix, meshTransform.position.ToFloat4());
 
                 Vector3[] meshVertices = m.vertices;
+
                 for (int submeshIndex = 0; submeshIndex < m.subMeshCount; submeshIndex++)
                 {
                     int[] meshIndices = m.GetIndices(submeshIndex);
                     for (int meshIndex = 0; meshIndex < meshIndices.Length; meshIndex += 3)
                     {
-                        Transform meshTransform = meshFilter.transform;
+                        // TODO, make triangle Transform modify the triangle instead of making a new one
                         Triangle tInMeshLocal = new Triangle(
-                            meshVertices[meshIndices[meshIndex]],
-                            meshVertices[meshIndices[meshIndex + 1]],
-                            meshVertices[meshIndices[meshIndex + 2]]);
-                        Triangle tInWorld = tInMeshLocal.Local2World(meshTransform);
-                        Triangle tInProjectorLocal = tInWorld.World2Local(transform);
+                            meshVertices[meshIndices[meshIndex]].ToFloat4(),
+                            meshVertices[meshIndices[meshIndex + 1]].ToFloat4(),
+                            meshVertices[meshIndices[meshIndex + 2]].ToFloat4());
+                        Triangle tInWorld = tInMeshLocal.LocalToWorld(meshTRS);
+                        Triangle tInProjectorLocal = tInWorld.WorldToLocal(m_TRS);
 
-                        CollectClippedTriangles(tInProjectorLocal);
-                        foreach(var newTriangle in m_scratchTris)
+                        sourceTriangleArray[sourceTriangles++] = tInProjectorLocal;
+                        
+                        if (sourceTriangles >= MaxDecalTriangles)
                         {
-                            if (num >= MaxDecalTriangles)
-                            {
-                                Debug.LogError($"Decal triangles exceeds max trianges {MaxDecalTriangles}.");
-                                return num;
-                            }
-                            CopyInto(newTriangle.Offset(m_displacement));
-                            num++;
+                            Debug.LogError($"Decal triangles exceeds max trianges {MaxDecalTriangles}.");
+                            return sourceTriangles;
                         }
                     }
                 }
             }
 
-            return num;
+            return sourceTriangles;
         }
 
-        
-        void CollectClippedTriangles(Triangle t)
+        void LateUpdate()
         {
-            m_scratchTris.Clear();;
-            m_points.Clear();
-            
-            // Some verts may actually be directly inside the projector
-            if (Contains(t.Vertex0)) m_points.Add(t.Vertex0);
-            if (Contains(t.Vertex1)) m_points.Add(t.Vertex1);
-            if (Contains(t.Vertex2)) m_points.Add(t.Vertex2);
-
-            // Early out
-            // If all three points of the triangle were in the projector, we don't need to do anything.
-            if (m_points.Count == 3)
+            // Complete and handle results of clipping job, if there was one
+            if (m_outstandingClippingJob)
             {
-                m_scratchTris.Add(t);
-                return;
-            }
-            
-            // Test each projector plane against the edges.
-            ClipToPlanes(new Edge[] {t.Edge0, t.Edge1, t.Edge2 }, UnitCube.Planes, m_points, point => Contains(point));
-            
-            // Test each projector edge against the triangle plane
-            ClipToPlanes(UnitCube.Edges, new Plane[] { t.plane }, m_points, point => t.Contains(point));
+                m_clippingJobHandle.Complete();
 
-            // No points
-            if (m_points.Count == 0)
-                return;
-            
-            // Sort the points by dot product around the median.
-            Vector3 middle = MiddlePoint(m_points);
-            Vector3 orientation = middle - m_points[0];
-            m_points.Sort((a,b) => SignedAngle(orientation, middle - a, t.normal).CompareTo(SignedAngle(orientation, middle - b, t.normal)));
-            
-            // Create triangles from the points
-            for (int i = 0; i <= m_points.Count - 1; i++)
-            {
-                m_scratchTris.Add(new Triangle(
-                    middle, m_points[i], m_points[(i+1) % m_points.Count]
-                    ));
+                HandleJob();
+                
+                m_outstandingClippingJob = false;
             }
         }
 
-        float SignedAngle(Vector3 a, Vector3 b, Vector3 normal)
+        void HandleJob()
         {
-            float angle = Vector3.Angle(a, b);
-            Vector3 cross = Vector3.Cross(a, b);
-            if (Vector3.Dot(normal, cross) < 0f)
-            {
-                return -angle;
-            }
+            int numGeneratedTriangles = m_clippingJob.NumGeneratedTriangles[0];
 
-            return angle;
+            if (numGeneratedTriangles >= MaxDecalTriangles)
+            {
+                Debug.LogError($"Decal triangles exceeds max triangles {MaxDecalTriangles}.");
+            }
+                
+            Debug.Log($"{numGeneratedTriangles} triangles");
+
+            BuildMesh(m_clippingJob.GeneratedTriangles, numGeneratedTriangles);
+
+            m_clippingJob.SourceTriangles.Dispose();
+            m_clippingJob.GeneratedTriangles.Dispose();
+            m_clippingJob.NumGeneratedTriangles.Dispose();
         }
 
-        Vector3 MiddlePoint(List<Vector3> list)
+        void BuildMesh(NativeArray<Triangle> triangleBuffer, int numTriangles)
         {
-            Vector3 sum = Vector3.zero;
-            foreach (var v in list)
+            if (m_mesh != null)
+#if UNITY_EDITOR
+                DestroyImmediate(m_mesh);
+#else
+            Destroy(_mesh);
+#endif
+            
+            m_scratchVerticesCount = 0;
+            m_scratchIndicesCount = 0;
+            m_scratchNormalsCount = 0;
+            m_scratchUVCount = 0;
+            
+            for( int i = 0; i < numTriangles; i++)
             {
-                sum += v;
+                Triangle t = triangleBuffer[i];
+                AppendTriangleToScratchBuffers(t.Offset(m_displacement));
             }
-
-            return sum / list.Count;
-        }
-
-        delegate bool TestPoint(Vector3 v);
-
-        void ClipToPlanes(Edge[] edges, Plane[] planes, List<Vector3> points, TestPoint testFunction)
-        {
-            foreach (var edge in edges)
+            
+            m_mesh = new Mesh();
+            m_mesh.SetVertices(m_scratchVertices, 0, m_scratchVerticesCount);
+            m_mesh.SetIndices(m_scratchIndices, 0, m_scratchIndicesCount, MeshTopology.Triangles, 0);
+            m_mesh.SetNormals(m_scratchNormals, 0, m_scratchNormalsCount);
+            m_mesh.SetUVs(0, m_scratchUVs, 0, m_scratchUVCount);
+            m_mesh.UploadMeshData(true);
+                
+            if (m_renderer != null)
             {
-                Ray r = new Ray(edge.Vertex0, (edge.Vertex1 - edge.Vertex0).normalized);
-
-                foreach (Plane p in planes)
-                {
-                    float dist;
-                    p.Raycast(r, out dist);
-                    float absDist = Mathf.Abs(dist);
-                    if (absDist > 0f)
-                    {
-                        Vector3 pt = r.GetPoint(dist);
-                        if (edge.Contains(pt))
-                        {
-                            if (testFunction(pt))
-                            {
-                                points.Add(pt);
-                            }
-                        }
-                    }
-                }
+                m_renderer.sharedMaterial = m_decalMaterial;
+            }
+                
+            if (m_meshFilter != null)
+            {
+                m_meshFilter.sharedMesh = m_mesh;
             }
         }
     }

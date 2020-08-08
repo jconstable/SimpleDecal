@@ -1,23 +1,12 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace SimpleDecal
 {
     public static class VectorExtensions
     {
-        public static Vector3 LocalToWorld(this Vector3 v, Transform t)
-        {
-            Vector3 v2 = t.localToWorldMatrix * v;
-            return t.position + v2;
-        }
-
-        public static Vector3 WorldToLocal(this Vector3 v, Transform t)
-        {
-            Vector3 v2 = v + -t.position;
-            return t.worldToLocalMatrix * v2;
-        }
-
         public static bool Approximately(this Quaternion a, Quaternion b)
         {
             return Mathf.Approximately(a.w, b.w) &&
@@ -32,6 +21,21 @@ namespace SimpleDecal
             return Mathf.Approximately(a.x, b.x) &&
                 Mathf.Approximately(a.y, b.y) &&
                 Mathf.Approximately(a.z, b.z);
+        }
+
+        public static float4 ToFloat4(this Vector3 v)
+        {
+            float4 f;
+            f.x = v.x;
+            f.y = v.y;
+            f.z = v.z;
+            f.w = 0f;
+            return f;
+        }
+
+        public static float Angle(float3 a, float3 b)
+        {
+            return math.acos(math.dot(a, b) / (math.length(a) * math.length(b)));
         }
     }
 }

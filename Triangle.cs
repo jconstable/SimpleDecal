@@ -1,19 +1,22 @@
-﻿using UnityEngine;
+﻿using Unity.Mathematics;
 
 namespace SimpleDecal
 {
-    struct Triangle
+    public struct Triangle
     {
-        public Edge Edge0 { get; private set; }
-        public Edge Edge1 { get; private set; }
-        public Edge Edge2 { get; private set; }
-        public Vector3 normal { get; private set; }
-        public Plane plane { get; private set; }
-        public Vector3 Vertex0 { get; private set; }
-        public Vector3 Vertex1 { get; private set; }
-        public Vector3 Vertex2 { get; private set; }
+        public Edge Edge0;
+        public Edge Edge1;
+        public Edge Edge2;
+        public float4 Normal;
+        public UnityEngine.Plane Plane;
+        public float4 Vertex0;
+        public float4 Vertex1;
+        public float4 Vertex2;
 
-        public Triangle(Vector3 aIn, Vector3 bIn, Vector3 cIn)
+        bool m_hasCalculatedArea;
+        float m_area;
+
+        public Triangle(float4 aIn, float4 bIn, float4 cIn)
         {
             Edge0 = new Edge(aIn, bIn);
             Edge1 = new Edge(bIn, cIn);
@@ -23,49 +26,70 @@ namespace SimpleDecal
             Vertex1 = bIn;
             Vertex2 = cIn;
 
-            plane = new Plane(aIn, bIn, cIn);
-            normal = plane.normal;
+            Plane = new UnityEngine.Plane(aIn.xyz, bIn.xyz, cIn.xyz);
+            Normal = math.normalize(Plane.normal.ToFloat4());
+            m_hasCalculatedArea = false;
+            m_area = 0f;
         }
 
-        public Triangle World2Local(Transform t)
+        public Triangle LocalToWorld(TRS trs)
         {
             return new Triangle(
-                Vertex0.WorldToLocal(t),
-                Vertex1.WorldToLocal(t),
-                Vertex2.WorldToLocal(t)
+                trs.LocalToWorld(Vertex0),
+                trs.LocalToWorld(Vertex1),
+                trs.LocalToWorld(Vertex2)
             );
         }
-
-        public Triangle Local2World(Transform t)
+        
+        public Triangle WorldToLocal(TRS trs)
         {
             return new Triangle(
-                Vertex0.LocalToWorld(t),
-                Vertex1.LocalToWorld(t),
-                Vertex2.LocalToWorld(t)
+                trs.WorldToLocal(Vertex0),
+                trs.WorldToLocal(Vertex1),
+                trs.WorldToLocal(Vertex2)
             );
         }
 
         public Triangle Offset(float distance)
         {
-            var dir = normal * distance;
+            float4 offset = Normal * distance;
             return new Triangle(
-                Vertex0 + dir,
-                Vertex1 + dir,
-                Vertex2 + dir);
+                Vertex0 + offset,
+                Vertex1 + offset,
+                Vertex2 + offset
+            );
+        }
+
+        public Triangle EnsureNormal(float4 normal)
+        {
+            if (math.dot(normal, Normal) > 0)
+            {
+                return this;
+            }
+            return new Triangle(
+                Vertex0,
+                Vertex2,
+                Vertex1
+                );
         }
 
         public float Area()
         {
-            Vector3 ab = Edge0.EdgeVector();
-            Vector3 ac = Edge1.EdgeVector();
-            float abLength = ab.magnitude;
-            float acLength = ac.magnitude;
-            float theta = Mathf.Acos(Vector3.Dot(ab, ac) / (abLength * acLength));
+            if (m_hasCalculatedArea)
+                return m_area;
+            
+            float4 ab = Edge0.EdgeVector();
+            float4 ac = Edge1.EdgeVector();
+            float abLength = math.length(ab);
+            float acLength = math.length(ac);
+            float theta = VectorExtensions.Angle(ab.xyz, ac.xyz);
 
-            return 0.5f * abLength * acLength * Mathf.Sin(theta);
+            m_area = 0.5f * abLength * acLength * math.sin(theta);
+            m_hasCalculatedArea = true;
+            return m_area;
         }
 
-        public bool Contains(Vector3 position)
+        public bool Contains(float4 position)
         {
             float area = Area();
 
@@ -75,7 +99,7 @@ namespace SimpleDecal
 
             // Position is inside triangle of the sum of the areas of the three new triangle made using position
             // equals the area of the whole triangle
-            return Mathf.Abs(area - (a1 + a2 + a3)) < DecalProjector.ErrorTolerance;
+            return math.abs(area - (a1 + a2 + a3)) < DecalProjector.ErrorTolerance;
         }
     }
 }
