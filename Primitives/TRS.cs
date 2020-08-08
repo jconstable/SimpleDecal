@@ -1,9 +1,8 @@
 ﻿using Unity.Mathematics;
-using UnityEngine;
-using UnityEngine.SocialPlatforms;
 
 namespace SimpleDecal
 {
+    // A small class that handles Translation, Rotation, and Scale for dealing with Triangle type
     public struct TRS
     {
         float4x4 m_worldToLocal;

@@ -3,13 +3,21 @@ using Unity.Mathematics;
 
 namespace SimpleDecal
 {
+    // IComparer that can sort points in rotational position around a normal
     struct TrianglePointComparer : IComparer<float4>
     {
-        float3 m_orientation;
-        float3 m_middle;
-        float3 m_normal;
+        float4 m_orientation;
+        float4 m_middle;
+        float4 m_normal;
 
-        public TrianglePointComparer(float3 orientation, float3 middle, float3 normal)
+        public TrianglePointComparer(float4 orientation, float4 middle, float4 normal)
+        {
+            m_orientation = orientation;
+            m_middle = middle;
+            m_normal = normal;
+        }
+        
+        public void Update(float4 orientation, float4 middle, float4 normal)
         {
             m_orientation = orientation;
             m_middle = middle;
@@ -18,14 +26,14 @@ namespace SimpleDecal
 
         public int Compare(float4 a, float4 b)
         {
-            return SignedAngle(m_orientation, m_middle - a.xyz, m_normal).CompareTo(SignedAngle(m_orientation, m_middle - b.xyz, m_normal));
+            return SignedAngle(m_orientation, m_middle - a, m_normal).CompareTo(SignedAngle(m_orientation, m_middle - b, m_normal));
         }
 
-        public static float SignedAngle(float3 a, float3 b, float3 normal)
+        public static float SignedAngle(float4 a, float4 b, float4 normal)
         {
             float angle = VectorExtensions.Angle(a, b);
-            float3 cross = math.cross(a, b);
-            if (math.dot(normal, cross) < 0f)
+            float3 cross = math.cross(a.xyz, b.xyz);
+            if (math.dot(normal.xyz, cross) < 0f)
             {
                 return -angle;
             }

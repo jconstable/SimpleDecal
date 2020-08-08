@@ -2,24 +2,26 @@
 
 namespace SimpleDecal
 {
+    // Small class representing an Edge
     public struct Edge
     {
-        public float4 Vertex0 { get; }
-        public float4 Vertex1 { get; }
+        public float4 Vertex0;
+        public float4 Vertex1;
         public float length;
 
         public Edge(float4 a, float4 b)
+        {
+            this = default;
+            SetFrom(a,b);
+        }
+
+        public void SetFrom(float4 a, float4 b)
         {
             Vertex0 = a;
             Vertex1 = b;
 
             float4 dir = a - b;
             length = math.length(dir);
-        }
-
-        public float4 EdgeVector()
-        {
-            return Vertex1 - Vertex0;
         }
 
         public bool Contains(float4 point)

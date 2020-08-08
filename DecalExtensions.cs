@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using Unity.Mathematics;
+﻿using Unity.Mathematics;
 using UnityEngine;
 
 namespace SimpleDecal
@@ -25,17 +23,17 @@ namespace SimpleDecal
 
         public static float4 ToFloat4(this Vector3 v)
         {
-            float4 f;
-            f.x = v.x;
-            f.y = v.y;
-            f.z = v.z;
-            f.w = 0f;
+            float4 f = float4.zero;
+            f.xyz = v;
             return f;
         }
 
-        public static float Angle(float3 a, float3 b)
+        public static float Angle(float4 a, float4 b)
         {
-            return math.acos(math.dot(a, b) / (math.length(a) * math.length(b)));
+            float num = math.sqrt(math.lengthsq(a) * math.lengthsq(b));
+            if (num < 1.00000000362749E-15)
+                return 0.0f;
+            return math.acos(math.clamp(math.dot(a, b) / num, -1f, 1f)) * 57.29578f;
         }
     }
 }

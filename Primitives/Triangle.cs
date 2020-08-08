@@ -2,13 +2,14 @@
 
 namespace SimpleDecal
 {
+    // Our representation of a Triangle, with some convenience functions
     public struct Triangle
     {
         public Edge Edge0;
         public Edge Edge1;
         public Edge Edge2;
         public float4 Normal;
-        public UnityEngine.Plane Plane;
+        public Plane Plane;
         public float4 Vertex0;
         public float4 Vertex1;
         public float4 Vertex2;
@@ -16,86 +17,111 @@ namespace SimpleDecal
         bool m_hasCalculatedArea;
         float m_area;
 
+
         public Triangle(float4 aIn, float4 bIn, float4 cIn)
         {
-            Edge0 = new Edge(aIn, bIn);
-            Edge1 = new Edge(bIn, cIn);
-            Edge2 = new Edge(cIn, aIn);
+            this = default;
+            SetFrom(aIn,bIn,cIn);
+        }
+        
+        public void SetFrom(float4 aIn, float4 bIn, float4 cIn)
+        {
+            Edge0 = default;
+            Edge1 = default;
+            Edge2 = default;
+            
+            Edge0.SetFrom(aIn, bIn);
+            Edge1.SetFrom(bIn, cIn);
+            Edge2.SetFrom(cIn, aIn);
 
             Vertex0 = aIn;
             Vertex1 = bIn;
             Vertex2 = cIn;
 
-            Plane = new UnityEngine.Plane(aIn.xyz, bIn.xyz, cIn.xyz);
-            Normal = math.normalize(Plane.normal.ToFloat4());
+            Plane = default;
+            Plane.SetFrom(aIn, bIn, cIn);
+            Normal = Plane.Normal;
+            m_hasCalculatedArea = false;
+            m_area = 0f;
+        }
+
+        public void CopyFrom(Triangle t)
+        {
+            Edge0 = t.Edge0;
+            Edge1 = t.Edge1;
+            Edge2 = t.Edge2;
+            
+            Vertex0 = t.Vertex0;
+            Vertex1 = t.Vertex1;
+            Vertex2 = t.Vertex2;
+
+            Plane = t.Plane;
+            Normal = t.Normal;
             m_hasCalculatedArea = false;
             m_area = 0f;
         }
 
         public Triangle LocalToWorld(TRS trs)
         {
-            return new Triangle(
+            Triangle t = default;
+            t.SetFrom(
                 trs.LocalToWorld(Vertex0),
                 trs.LocalToWorld(Vertex1),
                 trs.LocalToWorld(Vertex2)
             );
+            return t;
         }
         
         public Triangle WorldToLocal(TRS trs)
         {
-            return new Triangle(
+            Triangle t = default;
+            t.SetFrom(
                 trs.WorldToLocal(Vertex0),
                 trs.WorldToLocal(Vertex1),
                 trs.WorldToLocal(Vertex2)
             );
+            return t;
         }
 
         public Triangle Offset(float distance)
         {
             float4 offset = Normal * distance;
-            return new Triangle(
+            Triangle t = default;
+            t.SetFrom(
                 Vertex0 + offset,
                 Vertex1 + offset,
                 Vertex2 + offset
             );
-        }
-
-        public Triangle EnsureNormal(float4 normal)
-        {
-            if (math.dot(normal, Normal) > 0)
-            {
-                return this;
-            }
-            return new Triangle(
-                Vertex0,
-                Vertex2,
-                Vertex1
-                );
+            return t;
         }
 
         public float Area()
         {
             if (m_hasCalculatedArea)
                 return m_area;
-            
-            float4 ab = Edge0.EdgeVector();
-            float4 ac = Edge1.EdgeVector();
-            float abLength = math.length(ab);
-            float acLength = math.length(ac);
-            float theta = VectorExtensions.Angle(ab.xyz, ac.xyz);
-
-            m_area = 0.5f * abLength * acLength * math.sin(theta);
+            m_area = Area(Vertex0, Vertex1, Vertex2);
             m_hasCalculatedArea = true;
             return m_area;
+        }
+        
+        public float Area(float4 a, float4 b, float4 c)
+        {
+            float4 ab = (a - b);
+            float4 ac = (a - c);
+            float abLength = math.length(ab);
+            float acLength = math.length(ac);
+            float theta = math.acos(math.dot(ab, ac) / (abLength * acLength));
+
+            return 0.5f * abLength * acLength * math.sin(theta);
         }
 
         public bool Contains(float4 position)
         {
             float area = Area();
 
-            float a1 = new Triangle(Vertex0, Vertex1, position).Area();
-            float a2 = new Triangle(Vertex1, Vertex2, position).Area();
-            float a3 = new Triangle(Vertex2, Vertex0, position).Area();
+            float a1 = Area(Vertex0, Vertex1, position);
+            float a2 = Area(Vertex1, Vertex2, position);
+            float a3 = Area(Vertex2, Vertex0, position);
 
             // Position is inside triangle of the sum of the areas of the three new triangle made using position
             // equals the area of the whole triangle
