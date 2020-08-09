@@ -3,6 +3,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
+using EventProvider = System.Diagnostics.Eventing.EventProvider;
 
 namespace SimpleDecal
 {
@@ -248,6 +249,13 @@ namespace SimpleDecal
                             meshVertices[meshIndices[meshIndex + 1]].ToFloat4(),
                             meshVertices[meshIndices[meshIndex + 2]].ToFloat4());
                         Triangle tInWorld = tInMeshLocal.LocalToWorld(meshTRS);
+                        
+                        // If the bounds of the individual triangle don't intersect with the unit cube bounds, we can
+                        // ignore it
+                        Bounds triangleBounds = BoundsFromTriangle(tInWorld);
+                        if (!triangleBounds.Intersects(m_bounds))
+                            continue;
+       
                         Triangle tInProjectorLocal = tInWorld.WorldToLocal(m_TRS);
 
                         sourceTriangleArray[sourceTriangles++] = tInProjectorLocal;
@@ -263,6 +271,26 @@ namespace SimpleDecal
 
             return sourceTriangles;
         }
+
+        Bounds BoundsFromTriangle(Triangle t)
+        {
+            float4 center = (t.Vertex0 + t.Vertex1 + t.Vertex2) / 3f;
+
+            float4 d0 = (center - t.Vertex0) * 2f;
+            float4 d1 = (center - t.Vertex1) * 2f;
+            float4 d2 = (center - t.Vertex2) * 2f;
+
+            Bounds b = new Bounds(center.xyz,
+                new Vector3(
+                    Mathf.Max(math.abs(d0.x), math.abs(d1.x), math.abs(d2.x)),
+                    Mathf.Max(math.abs(d0.y), math.abs(d1.y), math.abs(d2.y)),
+                    Mathf.Max(math.abs(d0.z), math.abs(d1.z), math.abs(d2.z))
+                ));
+                    
+
+            return b;
+        }
+
 
         void LateUpdate()
         {
