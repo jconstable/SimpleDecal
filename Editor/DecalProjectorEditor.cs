@@ -22,7 +22,8 @@ namespace SimpleDecal
             }
 
             newGO.AddComponent<MeshFilter>();
-            newGO.AddComponent<MeshRenderer>();
+            MeshRenderer rend = newGO.AddComponent<MeshRenderer>();
+            rend.shadowCastingMode = ShadowCastingMode.Off;
             
             DecalProjector proj = newGO.AddComponent<DecalProjector>();
             
@@ -64,7 +65,7 @@ namespace SimpleDecal
                 m.SetColor("_BaseColor", Color.white);
                 m.SetColor("_Color", Color.white);
             }
-            proj.SetMaterial(m);
+            rend.material = m;
             proj.Bake();
 
             Selection.activeGameObject = newGO;
