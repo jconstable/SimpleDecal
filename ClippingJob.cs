@@ -101,12 +101,24 @@ namespace SimpleDecal
             NumGeneratedTriangles[0] = generatedTriangleCount;
         }
 
+        public static float Tolerant(float v)
+        {
+            return v > 0f ? v + DecalProjector.ErrorTolerance : v - DecalProjector.ErrorTolerance;
+        }
+
         static bool UnitCubeContains(float4 v)
         {
-            return math.abs(v.x) <= 0.5f &&
-                math.abs(v.y) <= 0.5f &&
-                math.abs(v.z) <= 0.5f;
+            if ((v.x >= Tolerant(-0.5f) && v.x <= Tolerant(0.5f)) &&
+                (v.y >= Tolerant(-0.5f) && v.y <= Tolerant(0.5f)) &&
+                (v.z >= Tolerant(-0.5f) && v.z <= Tolerant(0.5f))
+            )
+            {
+                return true;
+            }
+
+            return false;
         }
+
         
         // Find the middle point of a set of points
         float4 MiddlePoint(NativeArray<float4> points, int length)
