@@ -13,7 +13,7 @@ namespace SimpleDecal
     public class DecalProjector : MonoBehaviour
     {
         public static readonly float ErrorTolerance = 0.005f;
-        public static readonly int MaxDecalTriangles = 100;
+        public static readonly int MaxDecalTriangles = 1000;
         
         [SerializeField]
         public float m_displacement = 0.0001f;
