@@ -16,9 +16,11 @@ namespace SimpleDecal
         public static readonly int MaxDecalTriangles = 1000;
         
         [SerializeField]
-        public float m_displacement = 0.0001f;
+        float m_displacement = 0.0001f;
         [SerializeField]
-        public LayerMask m_layerMask = int.MaxValue; // Everything
+        LayerMask m_layerMask = int.MaxValue; // Everything
+        [SerializeField]
+        bool m_cullBackfaces = true;
 
         Mesh m_mesh;
         Bounds m_bounds;
@@ -207,6 +209,7 @@ namespace SimpleDecal
         {
             TRS meshTRS = new TRS();
             int sourceTriangles = 0;
+            float4 up = new float4(0f,1f,0f,0f);
 
             foreach (var meshFilter in FindObjectsOfType<MeshFilter>())
             {
@@ -249,7 +252,13 @@ namespace SimpleDecal
                             meshVertices[meshIndices[meshIndex + 1]].ToFloat4(),
                             meshVertices[meshIndices[meshIndex + 2]].ToFloat4());
                         Triangle tInWorld = tInMeshLocal.LocalToWorld(meshTRS);
-                        
+
+                        if (m_cullBackfaces)
+                        {
+                            if (math.dot(tInWorld.Normal, up) < 0f)
+                                continue;
+                        }
+
                         // If the bounds of the individual triangle don't intersect with the unit cube bounds, we can
                         // ignore it
                         Bounds triangleBounds = BoundsFromTriangle(tInWorld);
@@ -309,7 +318,13 @@ namespace SimpleDecal
         void BuildMesh(NativeArray<Triangle> triangleBuffer, int numTriangles)
         {
             DestroyMesh();
-            
+
+            if (numTriangles == 0)
+            {
+                Debug.LogWarning("Unable to generate mesh with zero triangles.");
+                return;
+            }
+
             m_scratchVerticesCount = 0;
             m_scratchIndicesCount = 0;
             m_scratchNormalsCount = 0;
@@ -342,6 +357,12 @@ namespace SimpleDecal
 #else
             Destroy(_mesh);
 #endif
+
+            m_mesh = null;
+            if (m_meshFilter != null)
+            {
+                m_meshFilter.sharedMesh = null;
+            }
         }
         
         // Fill out the scratch buffers with a triangle's data
