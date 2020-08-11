@@ -10,3 +10,6 @@ Decals can be added to an object by using the context menu in the hierarchy, and
 Any material can be used in the decal's MeshRenderer. It is simply new geometry, copied from the intersecting geometry and clipped to the Decal Projector space.
 
 Clipping work is done via a job, and is extremely fast. The job itself is allocation-free, though Mesh generation has a cost.
+
+TODO:
+* In Edit mode, if the mesh is not read/write, load the aset from disk instead. Obviously, this won't be supported at runtime.
