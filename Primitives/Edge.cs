@@ -5,6 +5,8 @@ namespace SimpleDecal
     // Small class representing an Edge
     public struct Edge
     {
+        public static readonly Edge zero = new Edge(0f, 0f);
+        
         public float4 Vertex0;
         public float4 Vertex1;
         public float length;

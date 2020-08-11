@@ -17,18 +17,23 @@ namespace SimpleDecal
         bool m_hasCalculatedArea;
         float m_area;
 
-
-        public Triangle(float4 aIn, float4 bIn, float4 cIn)
+        public static readonly Triangle zero = new Triangle()
         {
-            this = default;
-            SetFrom(aIn,bIn,cIn);
-        }
-        
+            Vertex0 = 0f,
+            Vertex1 = 0f,
+            Vertex2 = 0f,
+            Normal = 0f,
+            Plane = Plane.zero,
+            Edge0 = Edge.zero,
+            Edge1 = Edge.zero,
+            Edge2 = Edge.zero
+        };
+
         public void SetFrom(float4 aIn, float4 bIn, float4 cIn)
         {
-            Edge0 = default;
-            Edge1 = default;
-            Edge2 = default;
+            Edge0 = Edge.zero;
+            Edge1 = Edge.zero;
+            Edge2 = Edge.zero;
             
             Edge0.SetFrom(aIn, bIn);
             Edge1.SetFrom(bIn, cIn);
@@ -38,7 +43,7 @@ namespace SimpleDecal
             Vertex1 = bIn;
             Vertex2 = cIn;
 
-            Plane = default;
+            Plane = Plane.zero;
             Plane.SetFrom(aIn, bIn, cIn);
             Normal = Plane.Normal;
             m_hasCalculatedArea = false;
@@ -63,7 +68,7 @@ namespace SimpleDecal
 
         public Triangle LocalToWorld(TRS trs)
         {
-            Triangle t = default;
+            Triangle t = Triangle.zero;
             t.SetFrom(
                 trs.LocalToWorld(Vertex0),
                 trs.LocalToWorld(Vertex1),
@@ -74,7 +79,7 @@ namespace SimpleDecal
         
         public Triangle WorldToLocal(TRS trs)
         {
-            Triangle t = default;
+            Triangle t = Triangle.zero;
             t.SetFrom(
                 trs.WorldToLocal(Vertex0),
                 trs.WorldToLocal(Vertex1),
@@ -86,7 +91,7 @@ namespace SimpleDecal
         public Triangle Offset(float distance)
         {
             float4 offset = Normal * distance;
-            Triangle t = default;
+            Triangle t = Triangle.zero;
             t.SetFrom(
                 Vertex0 + offset,
                 Vertex1 + offset,

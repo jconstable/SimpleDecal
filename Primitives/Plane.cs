@@ -5,6 +5,8 @@ namespace SimpleDecal
 {
     public struct Plane
     {
+        public static readonly Plane zero = new Plane(0f, 0f,0f);
+        
         public float4 Normal;
         public float Distance;
         

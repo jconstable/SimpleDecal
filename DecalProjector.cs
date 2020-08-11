@@ -21,6 +21,8 @@ namespace SimpleDecal
         LayerMask m_layerMask = int.MaxValue; // Everything
         [SerializeField]
         bool m_cullBackfaces = true;
+        [SerializeField]
+        bool m_bakeOnStart;
 
         Mesh m_mesh;
         Bounds m_bounds;
@@ -49,6 +51,8 @@ namespace SimpleDecal
         void Start()
         {
             m_meshFilter = GetComponent<MeshFilter>();
+            if(m_bakeOnStart)
+                Bake();
         }
         
         void OnDestroy()
@@ -143,23 +147,31 @@ namespace SimpleDecal
         public void Bake()
         {
             m_bounds = new Bounds(transform.position, transform.lossyScale);
-            m_outstandingClippingJob = true;
-            
+ 
             UpdateSelfTRS();
             GenerateScratchBuffers();
-            CreateMeshJob();
+            bool jobCreated = CreateMeshJob();
+            if (!jobCreated)
+            {
+                return;
+            }
             
+            m_outstandingClippingJob = true;
             m_clippingJobHandle = m_clippingJob.Schedule();
-            
             // Wait for the job to complete in LateUpdate
         }
 
         // Create the job that will perform the clipping
-        void CreateMeshJob()
+        bool CreateMeshJob()
         {
             NativeArray<Triangle> sourceTriangleArray = new NativeArray<Triangle>(MaxDecalTriangles, Allocator.TempJob);
             int numSourceTriangles = GatherTriangles(sourceTriangleArray);
-            
+            if (numSourceTriangles == 0)
+            {
+                sourceTriangleArray.Dispose();
+                return false;
+            }
+                
             NativeArray<int> numGeneratedTriangles = new NativeArray<int>(1, Allocator.TempJob);
             NativeArray<Triangle> generatedTriangleArray = new NativeArray<Triangle>(MaxDecalTriangles, Allocator.TempJob);
 
@@ -173,6 +185,8 @@ namespace SimpleDecal
             m_clippingJob.ScratchTriangleEdges = new NativeArray<Edge>(3, Allocator.TempJob);
             m_clippingJob.ScratchTrianglePlanes = new NativeArray<Plane>(1, Allocator.TempJob);
             UnitCube.GenerateStructures(out m_clippingJob.UnitCubeEdges, out m_clippingJob.UnitCubePlanes);
+
+            return true;
         }
 
         void CleanUpMeshJob()
@@ -247,7 +261,8 @@ namespace SimpleDecal
                     for (int meshIndex = 0; meshIndex < meshIndices.Length; meshIndex += 3)
                     {
                         // TODO, make triangle Transform modify the triangle instead of making a new one
-                        Triangle tInMeshLocal = new Triangle(
+                        Triangle tInMeshLocal = Triangle.zero;
+                        tInMeshLocal.SetFrom(
                             meshVertices[meshIndices[meshIndex]].ToFloat4(),
                             meshVertices[meshIndices[meshIndex + 1]].ToFloat4(),
                             meshVertices[meshIndices[meshIndex + 2]].ToFloat4());
@@ -306,11 +321,11 @@ namespace SimpleDecal
             // Complete and handle results of clipping job, if there was one
             if (m_outstandingClippingJob)
             {
+                m_outstandingClippingJob = false;
+                
                 m_clippingJobHandle.Complete(); // Sync on the job
 
                 HandleJob();
-                
-                m_outstandingClippingJob = false;
             }
         }
 

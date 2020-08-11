@@ -23,18 +23,22 @@ namespace SimpleDecal
         public NativeArray<Plane> ScratchTrianglePlanes;
         [ReadOnly] public NativeArray<Edge> UnitCubeEdges;
         [ReadOnly] public NativeArray<Plane> UnitCubePlanes;
-        
-        delegate bool TestPoint(float4 v);
+
+        enum TestPointMode
+        {
+            UnitCube,
+            Triangle
+        }
 
         public void Execute()
         {
             int generatedTriangleCount = 0;
             int scratchPointsCount;
 
-            Triangle sourceTriangle = default;
+            Triangle sourceTriangle = Triangle.zero;
 
             // Comparer for sorting new points around a normal
-            TrianglePointComparer comparer = default;
+            TrianglePointComparer comparer = TrianglePointComparer.zero;
 
             // For each source triangle, find a new set of points against the unit cube
             for (int tIndex = 0; tIndex < NumSourceTriangles; tIndex++)
@@ -65,11 +69,11 @@ namespace SimpleDecal
                 ScratchTriangleEdges[0] = sourceTriangle.Edge0;
                 ScratchTriangleEdges[1] = sourceTriangle.Edge1;
                 ScratchTriangleEdges[2] = sourceTriangle.Edge2;
-                ClipToPlanes(ScratchTriangleEdges, UnitCubePlanes, ScratchPoints, point => UnitCubeContains(point), scratchPointsCount, out scratchPointsCount);
+                ClipToPlanes(sourceTriangle, ScratchTriangleEdges, UnitCubePlanes, ScratchPoints, TestPointMode.UnitCube, scratchPointsCount, out scratchPointsCount);
 
                 // Test each projector edge against the triangle plane
                 ScratchTrianglePlanes[0] = sourceTriangle.Plane;
-                ClipToPlanes(UnitCubeEdges, ScratchTrianglePlanes, ScratchPoints, point => sourceTriangle.Contains(point), scratchPointsCount, out scratchPointsCount);
+                ClipToPlanes(sourceTriangle, UnitCubeEdges, ScratchTrianglePlanes, ScratchPoints, TestPointMode.Triangle, scratchPointsCount, out scratchPointsCount);
 
                 // No points
                 if (scratchPointsCount == 0)
@@ -83,7 +87,7 @@ namespace SimpleDecal
                 comparer.Update(orientation, middle, sourceTriangle.Normal);
                 NativeArraySort(ScratchPoints, 0, scratchPointsCount, comparer);
 
-                Triangle newTriangle = default;
+                Triangle newTriangle = Triangle.zero;
                 // Create triangles from the points
                 for (int p = 0; p < scratchPointsCount; p++)
                 {
@@ -133,28 +137,39 @@ namespace SimpleDecal
         }
         
         // Iterate over the edges, comparing each to every plane, and find if the intersection is usable.
-        void ClipToPlanes(NativeArray<Edge> edges, NativeArray<Plane> planes, NativeArray<float4> points, TestPoint testFunction, int startingPointsCount, out int m_scratchPointsCount)
+        void ClipToPlanes(Triangle sourceTriangle, NativeArray<Edge> edges, NativeArray<Plane> planes, NativeArray<float4> points, TestPointMode mode, int startingPointsCount, out int m_scratchPointsCount)
         {
-            Ray r = default;
+            Ray r = Ray.zero;
             m_scratchPointsCount = startingPointsCount;
             
-            foreach (var edge in edges)
+            for(int e = 0; e < edges.Length; e++)
             {
+                Edge edge = edges[e];
                 r.SetFrom(edge.Vertex0, edge.Vertex1 - edge.Vertex0);
 
-                foreach (Plane p in planes)
+                for(int p = 0; p < planes.Length; p++)
                 {
+                    Plane plane = planes[p];
                     float dist;
-                    p.Raycast(r, out dist);
+                    plane.Raycast(r, out dist);
                     float absDist = math.abs(dist);
                     if (absDist > 0f)
                     {
                         float4 pt = r.GetPoint(dist);
                         if (edge.Contains(pt))
                         {
-                            if (testFunction(pt))
+                            if (mode == TestPointMode.UnitCube)
                             {
-                                points[m_scratchPointsCount++] = pt;
+                                if (UnitCubeContains(pt))
+                                {
+                                    points[m_scratchPointsCount++] = pt;
+                                }
+                            }
+                            else {
+                                if (sourceTriangle.Contains(pt))
+                                {
+                                    points[m_scratchPointsCount++] = pt;
+                                }
                             }
                         }
                     }
@@ -163,10 +178,10 @@ namespace SimpleDecal
         }
 
         // Bubble sort, because the arrays are small and NativeArray doesn't have a sort method
-        void NativeArraySort<T>(NativeArray<T> a, int start, int length, IComparer<T> comparer) where T : struct
+        void NativeArraySort(NativeArray<float4> a, int start, int length, TrianglePointComparer comparer)
         {
             int upperBound = start + length;
-            T t = default(T);
+            float4 t = 0f;
             for (int p = start; p <= upperBound - 2; p++)
             {
                 for (int i = start; i <= upperBound - 2; i++)

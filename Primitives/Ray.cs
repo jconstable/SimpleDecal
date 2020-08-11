@@ -5,6 +5,7 @@ namespace SimpleDecal
     // Small class that represent a ray
     public struct Ray
     {
+        public static readonly Ray zero = new Ray(0f, 0f);
         public float4 Origin;
         public float4 Direction;
 

@@ -6,16 +6,16 @@ namespace SimpleDecal
     // IComparer that can sort points in rotational position around a normal
     struct TrianglePointComparer : IComparer<float4>
     {
+        public static readonly TrianglePointComparer zero = new TrianglePointComparer
+        {
+            m_orientation = 0f,
+            m_middle = 0f,
+            m_normal = 0f
+        };
+        
         float4 m_orientation;
         float4 m_middle;
         float4 m_normal;
-
-        public TrianglePointComparer(float4 orientation, float4 middle, float4 normal)
-        {
-            m_orientation = orientation;
-            m_middle = middle;
-            m_normal = normal;
-        }
         
         public void Update(float4 orientation, float4 middle, float4 normal)
         {
